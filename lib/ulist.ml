@@ -33,7 +33,30 @@ module Make(A : UNIFIABLE) = struct
     | j, Var -> [Monoid j], puf
     | j, Expr ts -> 
       let ts', p' = flatten (ts, puf) in
-      ts', set_det j (Expr ts') p'
+      ts', set_det j (Expr ts') p' 
+  
+  let freeze = 
+    let c = ref (-1) in
+    let next () = c := succ !c; !c in
+    let m = Hashtbl.create 32 in
+    let memo i = 
+      Hashtbl.find_option m i |> Option.default_delayed @@ fun () -> 
+        let nu = next () in
+        Hashtbl.add m i nu;
+        nu in
+    List.map @@ function
+      | Monoid i -> Monoid (memo i)
+      | Letter a -> Letter a (* need to freeze letters as well *)
+  
+  let uniquify = 
+    let m = Hashtbl.create 32 in
+    let log = freeze %> fun y -> 
+      match Hashtbl.find_option m y with
+      | Some () -> false
+      | None -> 
+        Hashtbl.add m y ();
+        true in
+    List.filter log
   
   let nullify i = set_det i (Expr [])
   
@@ -77,11 +100,10 @@ module Make(A : UNIFIABLE) = struct
     | (_, Var), (_, Var) -> [Var, p]
     | (i, Var), (_, Expr e) | (_, Expr e), (i, Var) -> solve_trivial_var i e p
     | (_, Expr e1), (_, Expr e2) -> 
-      List.map (fun p -> Expr e1, p) (solve n e1 e2 p)
+      List.map
+        (fun p -> T2.map1 (fun e -> Expr (freeze e)) (flatten (e1, p)))
+        (solve n e1 e2 p)
   ) k
-
-  (* recombine unifiers through freezing *)
-  (* consider unification backwards *)
 
   let pretty_term out term = match term with
     | Letter a -> fprintf out "%s" (A.to_string a)

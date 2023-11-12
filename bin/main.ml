@@ -30,7 +30,6 @@ let () = match Sys.argv.(1) with
     let p2 = P.add_det j e2 p1 in
     let p3 = unify 128 i j p2 in
     print_monoid (i, p3);
-    print_newline ();
     (* p3 |> List.iter @@ fun p -> 
       print_string "Unifier 1: ";
       print_monoid (i, p) *)
