@@ -96,14 +96,13 @@ module Make(A : UNIFIABLE) = struct
       solve (n/2) ts us (set_det i (Expr [Monoid j; Monoid k]) (add_det k Var p))
     @ solve (n/2) ts us (set_det j (Expr [Monoid i; Monoid k]) (add_det k Var p))
 
-  let unify n k = mergei (fun i u j v p -> match (i, u), (j, v) with
+  let unify n = mergei @@ fun i u j v p -> match (i, u), (j, v) with
     | (_, Var), (_, Var) -> [Var, p]
     | (i, Var), (_, Expr e) | (_, Expr e), (i, Var) -> solve_trivial_var i e p
     | (_, Expr e1), (_, Expr e2) -> 
       List.map
         (fun p -> T2.map1 (fun e -> Expr (freeze e)) (flatten (e1, p)))
         (solve n e1 e2 p)
-  ) k
 
   let pretty_term out term = match term with
     | Letter a -> fprintf out "%s" (A.to_string a)
