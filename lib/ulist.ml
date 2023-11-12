@@ -35,6 +35,7 @@ module Make(A : UNIFIABLE) = struct
       let ts', p' = flatten (ts, puf) in
       ts', set_det j (Expr ts') p' 
   
+  (* change to meet signature since we don't know about internals *)
   let freeze = 
     let c = ref (-1) in
     let next () = c := succ !c; !c in
