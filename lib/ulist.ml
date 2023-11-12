@@ -46,7 +46,7 @@ module Make(A : UNIFIABLE) = struct
         nu in
     List.map @@ function
       | Monoid i -> Monoid (memo i)
-      | Letter a -> Letter a (* need to freeze letters as well *)
+      | Letter a -> Letter (A.freeze a)
   
   let uniquify = 
     let m = Hashtbl.create 32 in
