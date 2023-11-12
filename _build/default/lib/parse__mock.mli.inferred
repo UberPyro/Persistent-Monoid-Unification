@@ -1,0 +1,8 @@
+type token = VAR of string | UNIFY | EOF | CONST of string
+val menhir_begin_marker : int
+val xv_term : Glue.M.term
+val xv_problem : Glue.M.term list * Glue.M.term list
+val xv_list_term_ : Glue.M.term list
+val xv_expr_file : Glue.M.term list
+val xv_expr : Glue.M.term list
+val menhir_end_marker : int
