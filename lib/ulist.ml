@@ -111,7 +111,7 @@ module Make(A : UNIFIABLE) = struct
 
   let pretty_monoid out k nuf = 
     search_all k nuf |> function
-    | [] -> fprintf out "%s" "no unifiers."
+    | [] -> fprintf out "%s" "no unifiers.\n"
     | lst -> 
       List.iter2i (fun k (i, x) p -> 
         fprintf out "#%d: " (succ k);
