@@ -33,7 +33,40 @@ module Make(A : UNIFIABLE) = struct
     | j, Var -> [Monoid j], puf
     | j, Expr ts -> 
       let ts', p' = flatten (ts, puf) in
-      ts', set_det j (Expr ts') p' 
+      ts', set_det j (Expr ts') p'
+
+  let pretty_term out term = match term with
+    | Letter a -> fprintf out "%s" (A.to_string a)
+    | Monoid i -> fprintf out "[%d]" i
+
+  let pretty_monoid out k nuf = match search_all k nuf with
+    | [] -> fprintf out "%s" "no unifiers.\n"
+    | lst -> 
+      List.iter2i (fun k (i, x) p -> 
+        fprintf out "#%d: " (succ k);
+        (match x with
+        | Var -> fprintf out "[%d]" i
+        | Expr e -> match flatten (e, p) |> fst with
+          | [] -> fprintf out "%s" "<eps>"
+          | t :: ts -> 
+            pretty_term out t;
+            List.iter (fun t -> fprintf out "%s" " "; pretty_term out t) ts
+        ); fprintf out "%s" "\n"
+      ) lst nuf
+    
+    let printerfy f x = 
+      let out = IO.output_string () in
+      f out x;
+      print_string (IO.close_out out)
+    
+    let print_term = printerfy pretty_term
+    let print_terms = function
+      | [] -> ()
+      | x :: xs -> 
+        print_term x;
+        List.iter (fun t -> print_string " "; print_term t) xs
+    let print_monoid eps = 
+      printerfy (fun out (x, p) -> pretty_monoid out x p) eps
   
   (* change to meet signature since we don't know about internals *)
   let freeze = 
@@ -67,6 +100,7 @@ module Make(A : UNIFIABLE) = struct
       | Monoid i -> Right i
     ) e in
     let occurs, others = List.partition ((=) i) vars in
+    (* printf "Occurs count: %d\n" (List.length occurs); *)
     match List.length occurs with
       | 0 -> [Expr e, p]
       | _ when List.length consts > 0 -> []
@@ -78,6 +112,7 @@ module Make(A : UNIFIABLE) = struct
   let rec solve n e1 e2 p0 = 
     let (e3, p1) = flatten (e1, p0) in
     let (e4, p ) = flatten (e2, p1) in
+    (* print_string "> Solving: "; print_terms e3; print_string " =? "; print_terms e4; print_newline (); *)
     match e3, e4 with
     | [], [] -> [p]
     | [Monoid i], e | e, [Monoid i] -> 
@@ -104,33 +139,5 @@ module Make(A : UNIFIABLE) = struct
       List.map
         (fun p -> T2.map1 (fun e -> Expr (freeze e)) (flatten (e1, p)))
         (solve n e1 e2 p)
-
-  let pretty_term out term = match term with
-    | Letter a -> fprintf out "%s" (A.to_string a)
-    | Monoid i -> fprintf out "[%d]" i
-
-  let pretty_monoid out k nuf = match search_all k nuf with
-    | [] -> fprintf out "%s" "no unifiers.\n"
-    | lst -> 
-      List.iter2i (fun k (i, x) p -> 
-        fprintf out "#%d: " (succ k);
-        (match x with
-        | Var -> fprintf out "[%d]" i
-        | Expr e -> match flatten (e, p) |> fst with
-          | [] -> fprintf out "%s" "<eps>"
-          | t :: ts -> 
-            pretty_term out t;
-            List.iter (fun t -> fprintf out "%s" " "; pretty_term out t) ts
-        ); fprintf out "%s" "\n"
-      ) lst nuf
-  
-  let printerfy f x = 
-    let out = IO.output_string () in
-    f out x;
-    print_string (IO.close_out out)
-  
-  let print_term = printerfy pretty_term
-  let print_monoid eps = 
-    printerfy (fun out (x, p) -> pretty_monoid out x p) eps
 
 end
