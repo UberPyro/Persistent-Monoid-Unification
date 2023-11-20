@@ -32,27 +32,21 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
       print_term out h;
       D.iter (fun t -> fprintf out " "; print_term out t) t
   
-  let front2 d = Option.map (fun (h, t) -> h, D.front t) (D.front d)
-  let rear2 d = Option.map (fun (f, r) -> D.rear f, r) (D.rear d)
+  let front2 d = Option.map (fun (h, t) -> h, t, D.front t) (D.front d)
+  let rear2 d = Option.map (fun (f, r) -> D.rear f, f, r) (D.rear d)
 
   let nullify i p = set_det i D.empty p
   let null_all vs p = List.fold_left (fun p j -> set_det j D.empty p) p vs
-  let recons = function
-    | Some (h, t) -> D.cons h t
-    | None -> D.empty
-  let resnoc = function
-    | Some (f, r) -> D.snoc f r
-    | None -> D.empty
   
   let fresh p = 
     let k = unique () in
-    k, add_det k D.(cons (Var k) empty) p
+    Var k, add_det k D.(cons (Var k) empty) p
   
   let rec solve hp d1_ d2_ p0_ = 
     let d1, p1_ = simp p0_ d1_ in
     let d2, p0 = simp p1_ d2_ in
-    match front2 d1, front2 d2, rear2 d1, rear2 d2 with
-    | Some (Var i, None), _, _, _  | _, Some (Var i, None), _, _ -> 
+    match[@warning "-57"] front2 d1, front2 d2, rear2 d1, rear2 d2 with
+    | Some (Var i, _, None), _, _, _  | _, Some (Var i, _, None), _, _ -> 
       let occurs, diff = List.partition (function
         | Var j -> i = j
         | _ -> false
@@ -61,7 +55,7 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
         | Atom _ -> Left () 
         | Var j -> Right j
       ) diff in
-      begin match[@warning "-8"] occurs, cs with
+      begin match occurs, cs with
         | [], _ -> [set_det i d2 p0]
         | _ :: _, () :: _ -> []
         | [_], [] -> [null_all vars p0]
@@ -69,47 +63,62 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
       end
     | None, None, _, _ -> [p0]
 
-    | None, Some (Atom _, _), _, _ | Some (Atom _, _), None, _, _
-    | _, _, None, Some (_, Atom _) | _, _, Some (_, Atom _), None -> []
+    | None, Some (Atom _, _, _), _, _ | Some (Atom _, _, _), None, _, _
+    | _, _, None, Some (_, _, Atom _) | _, _, Some (_, _, Atom _), None -> []
 
-    | Some (Atom a, u), Some (Atom b, v), _, _ -> 
-      List.concat_map (solve hp (recons u) (recons v)) (A.unify a b p0)
-    | _, _, Some (u, Atom a), Some (v, Atom b) -> 
-      List.concat_map (solve hp (resnoc u) (resnoc v)) (A.unify a b p0)
+    | Some (Atom a, u, _), Some (Atom b, v, _), _, _ 
+    | _, _, Some (_, u, Atom a), Some (_, v, Atom b) -> 
+      List.concat_map (solve hp u v) (A.unify a b p0)
 
-    | None, Some (Var i, u), _, _ | Some (Var i, u), None, _, _ -> 
-      solve hp (recons u) d2 (nullify i p0)
-    | _, _, None, Some (u, Var i) | _, _, Some (u, Var i), None -> 
-      solve hp (resnoc u) d2 (nullify i p0)
+    | None, Some (Var i, u, _), _, _ | Some (Var i, u, _), None, _, _
+    | _, _, None, Some (_, u, Var i) | _, _, Some (_, u, Var i), None -> 
+      solve hp u d2 (nullify i p0)
+    
+    | Some (Var i, u, _), Some (Var j, v, _), _, _
+    | _, _, Some (_, v, Var j), Some (_, u, Var i) when i = j -> solve hp u v p0
 
     | _ when hp <= 0 -> []
 
-    | Some (Atom _ as a, u), Some (Var i, v), _, _
-    | Some (Var i, v), Some (Atom _ as a, u), _, _ -> 
+    | Some (Atom _ as a, u, _), Some (Var i, v, _), _, _
+    | Some (Var i, v, _), Some (Atom _ as a, u, _), _, _ -> 
       let k, p1 = fresh p0 in
-      solve (hp-1) (D.cons a (recons u)) (recons v) (nullify i p1)
-    @ solve (hp-1) (recons u) (recons v) (set_det i D.(cons a (cons (Var k) empty)) p1)    
+      solve (hp-1) (D.cons a u) v (nullify i p1)
+    @ solve (hp-1) u v (set_det i D.(cons a (cons k empty)) p1)    
     
-    | _, _, Some (u, (Atom _ as a)), Some (v, Var i)
-    | _, _, Some (v, Var i), Some (u, (Atom _ as a)) -> 
+    | _, _, Some (_, u, (Atom _ as a)), Some (_, v, Var i)
+    | _, _, Some (_, v, Var i), Some (_, u, (Atom _ as a)) -> 
       let k, p1 = fresh p0 in
-      solve (hp-1) (D.cons a (resnoc u)) (resnoc v) (nullify i p1)
-    @ solve (hp-1) (resnoc u) (resnoc v) (set_det i D.(cons (Var k) (cons a empty)) p1)    
+      solve (hp-1) (D.snoc u a) v (nullify i p1)
+    @ solve (hp-1) u v (set_det i D.(cons k (cons a empty)) p1)    
     
-    | Some (Var i, Some ((Atom _ as a), u)), Some (Var j, Some (Var k, v)), _, _
-    | Some (Var j, Some (Var k, v)), Some (Var i, Some ((Atom _ as a), u)), _, _ -> 
+    | Some (Var i as w, x, Some ((Atom _ as a), u)), Some (Var j as y, v, Some (Var _, _)), _, _
+    | Some (Var j as y, v, Some (Var _, _)), Some (Var i as w, x, Some ((Atom _ as a), u)), _, _ -> 
       let n, p1 = fresh p0 in
-      solve (hp/2) u D.(cons (Var n) (cons (Var k) v))
-        (set_det j D.(cons (Var i) (cons a (cons (Var n) empty))) p1)
+      solve (hp/2) u D.(cons n v) (set_det j D.(cons w (cons a (cons n empty))) p1)
+    @ solve (hp/2) D.(cons n x) v (set_det i D.(cons y (cons n empty)) p1)
     
-    | _, _, Some (Some (u, (Atom _ as a)), Var i), Some (Some (v, Var k), Var j)
-    | _, _, Some (Some (v, Var k), Var j), Some (Some (u, (Atom _ as a)), Var i) -> 
+    | _, _, Some (Some (u, (Atom _ as a)), x, (Var i as w)), Some (Some (_, Var _), v, (Var j as y))
+    | _, _, Some (Some (_, Var _), v, (Var j as y)), Some (Some (u, (Atom _ as a)), x, (Var i as w)) -> 
       let n, p1 = fresh p0 in
-      solve (hp/2) u D.(cons (Var n) (cons (Var k) v))
-        (set_det j D.(cons (Var i) (cons a (cons (Var n) empty))) p1)
+      solve (hp/2) u D.(snoc v n) (set_det j D.(snoc (snoc (cons n empty) a) w) p1)
+    @ solve (hp/2) D.(snoc x n) v (set_det i D.(snoc (cons n empty) y) p1)
+    
+    | Some (Var i as vi, u, Some (Var _, _)), Some (Var j as vj, v, Some (Var _, _)), _, _ -> 
+      let n, p1 = fresh p0 in
+      solve (hp/2) D.(cons n u) v (set_det i D.(cons vj (cons n empty)) p1)
+    @ let a, p2 = T2.map1 (fun z -> Atom z) (A.fresh p1) in
+      solve (hp/2) u D.(cons a (cons n v))
+        (set_det j D.(cons vi (cons a (cons n empty))) p2)
+    
+    | _, _, Some (Some (_, Var _), u, (Var i as vi)), Some (Some (_, Var _), v, (Var j as vj)) -> 
+      let n, p1 = fresh p0 in
+      solve (hp/2) D.(snoc u n) v (set_det i D.(snoc (cons n empty) vj) p1)
+    @ let a, p2 = T2.map1 (fun z -> Atom z) (A.fresh p1) in
+      solve (hp/2) u D.(snoc (snoc v n) a)
+        (set_det j D.(snoc (snoc (cons n empty) a) vi) p2)
     
     | _ -> failwith "todo"
 
-  
+  (* handle vars are equal ! *)
 
 end
