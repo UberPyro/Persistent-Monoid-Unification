@@ -1,143 +1,115 @@
 open! Batteries
 open Printf
 module T2 = Tuple2
-module E = Either
+(* module E = Either *)
+module D = Deque
 
 open Nuf_func.Monoid
 open U
 
-module Make(A : UNIFIABLE) = struct  
-  (* type t = int *)
-  type _t = 
-    | Var
-    | Expr of term list
+module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics *)
+  
+  type t = term D.t
   and term = 
-    | Letter of A.t
-    | Monoid of int
+    | Atom of A.t
+    | Var of int
   
-  let bind_puf f (e, puf) = 
-    List.fold_left (fun (a, p) t -> 
-      let t', p' = f t p in
-      List.rev_append t' a, p'
-    ) ([], puf) e |> T2.map1 List.rev
+  let rec simp ?(acc=D.empty) p0 = D.fold_left (fun (d1, p1) -> function
+    | Atom _ as a -> D.snoc d1 a, p1
+    | Var i -> 
+      let j, t1 = search i p0 in
+      let t2, p2 = simp ~acc:d1 p0 t1 in
+      t2, set_det j t2 p2
+  ) (acc, p0)
+
+  let print_term out = function
+    | Atom a -> fprintf out "%s" (A.to_string a)
+    | Var i -> fprintf out "[%d]" i
+
+  let print_monoid out p0 = simp p0 %> fst %> D.front %> function[@warning "-8"]
+    | None -> fprintf out "\n"
+    | Some (h, t) -> 
+      print_term out h;
+      D.iter (fun t -> fprintf out " "; print_term out t) t
   
-  let (let*) xs f = bind_puf (curry f) xs
+  let front2 d = Option.map (fun (h, t) -> h, D.front t) (D.front d)
+  let rear2 d = Option.map (fun (f, r) -> D.rear f, r) (D.rear d)
 
-  let rec flatten x = 
-    let* (term, puf) = x in
-    match term with
-      | Letter a -> [Letter a], puf
-      | Monoid i -> flatten_monoid (i, puf)
+  let nullify i p = set_det i D.empty p
+  let null_all vs p = List.fold_left (fun p j -> set_det j D.empty p) p vs
+  let recons = function
+    | Some (h, t) -> D.cons h t
+    | None -> D.empty
+  let resnoc = function
+    | Some (f, r) -> D.snoc f r
+    | None -> D.empty
   
-  and flatten_monoid (i, puf) = match search i puf with
-    | j, Var -> [Monoid j], puf
-    | j, Expr ts -> 
-      let ts', p' = flatten (ts, puf) in
-      ts', set_det j (Expr ts') p'
+  let fresh p = 
+    let k = unique () in
+    k, add_det k D.(cons (Var k) empty) p
+  
+  let rec solve hp d1_ d2_ p0_ = 
+    let d1, p1_ = simp p0_ d1_ in
+    let d2, p0 = simp p1_ d2_ in
+    match front2 d1, front2 d2, rear2 d1, rear2 d2 with
+    | Some (Var i, None), _, _, _  | _, Some (Var i, None), _, _ -> 
+      let occurs, diff = List.partition (function
+        | Var j -> i = j
+        | _ -> false
+      ) (D.to_list d2) in
+      let cs, vars = List.partition_map (function 
+        | Atom _ -> Left () 
+        | Var j -> Right j
+      ) diff in
+      begin match[@warning "-8"] occurs, cs with
+        | [], _ -> [set_det i d2 p0]
+        | _ :: _, () :: _ -> []
+        | [_], [] -> [null_all vars p0]
+        | _ :: _ :: _, [] -> [null_all (i :: vars) p0]
+      end
+    | None, None, _, _ -> [p0]
 
-  let pretty_term out term = match term with
-    | Letter a -> fprintf out "%s" (A.to_string a)
-    | Monoid i -> fprintf out "[%d]" i
+    | None, Some (Atom _, _), _, _ | Some (Atom _, _), None, _, _
+    | _, _, None, Some (_, Atom _) | _, _, Some (_, Atom _), None -> []
 
-  let pretty_monoid out k nuf = match search_all k nuf with
-    | [] -> fprintf out "%s" "no unifiers.\n"
-    | lst -> 
-      List.iter2i (fun k (i, x) p -> 
-        fprintf out "#%d: " (succ k);
-        (match x with
-        | Var -> fprintf out "[%d]" i
-        | Expr e -> match flatten (e, p) |> fst with
-          | [] -> fprintf out "%s" "<eps>"
-          | t :: ts -> 
-            pretty_term out t;
-            List.iter (fun t -> fprintf out "%s" " "; pretty_term out t) ts
-        ); fprintf out "%s" "\n"
-      ) lst nuf
+    | Some (Atom a, u), Some (Atom b, v), _, _ -> 
+      List.concat_map (solve hp (recons u) (recons v)) (A.unify a b p0)
+    | _, _, Some (u, Atom a), Some (v, Atom b) -> 
+      List.concat_map (solve hp (resnoc u) (resnoc v)) (A.unify a b p0)
+
+    | None, Some (Var i, u), _, _ | Some (Var i, u), None, _, _ -> 
+      solve hp (recons u) d2 (nullify i p0)
+    | _, _, None, Some (u, Var i) | _, _, Some (u, Var i), None -> 
+      solve hp (resnoc u) d2 (nullify i p0)
+
+    | _ when hp <= 0 -> []
+
+    | Some (Atom _ as a, u), Some (Var i, v), _, _
+    | Some (Var i, v), Some (Atom _ as a, u), _, _ -> 
+      let k, p1 = fresh p0 in
+      solve (hp-1) (D.cons a (recons u)) (recons v) (nullify i p1)
+    @ solve (hp-1) (recons u) (recons v) (set_det i D.(cons a (cons (Var k) empty)) p1)    
     
-    let printerfy f x = 
-      let out = IO.output_string () in
-      f out x;
-      print_string (IO.close_out out)
+    | _, _, Some (u, (Atom _ as a)), Some (v, Var i)
+    | _, _, Some (v, Var i), Some (u, (Atom _ as a)) -> 
+      let k, p1 = fresh p0 in
+      solve (hp-1) (D.cons a (resnoc u)) (resnoc v) (nullify i p1)
+    @ solve (hp-1) (resnoc u) (resnoc v) (set_det i D.(cons (Var k) (cons a empty)) p1)    
     
-    let print_term = printerfy pretty_term
-    let print_terms = function
-      | [] -> ()
-      | x :: xs -> 
-        print_term x;
-        List.iter (fun t -> print_string " "; print_term t) xs
-    let print_monoid eps = 
-      printerfy (fun out (x, p) -> pretty_monoid out x p) eps
-  
-  (* change to meet signature since we don't know about internals *)
-  let freeze = 
-    let c = ref (-1) in
-    let next () = c := succ !c; !c in
-    let m = Hashtbl.create 32 in
-    let memo i = 
-      Hashtbl.find_option m i |> Option.default_delayed @@ fun () -> 
-        let nu = next () in
-        Hashtbl.add m i nu;
-        nu in
-    List.map @@ function
-      | Monoid i -> Monoid (memo i)
-      | Letter a -> Letter (A.freeze a)
-  
-  let uniquify = 
-    let m = Hashtbl.create 32 in
-    let log = freeze %> fun y -> 
-      match Hashtbl.find_option m y with
-      | Some () -> false
-      | None -> 
-        Hashtbl.add m y ();
-        true in
-    List.filter log
-  
-  let nullify i = set_det i (Expr [])
-  
-  let solve_trivial_var i e p = 
-    let consts, vars = List.partition_map (function 
-      | Letter a -> Left a
-      | Monoid i -> Right i
-    ) e in
-    let occurs, others = List.partition ((=) i) vars in
-    (* printf "Occurs count: %d\n" (List.length occurs); *)
-    match List.length occurs with
-      | 0 -> [Expr e, p]
-      | _ when List.length consts > 0 -> []
-      | 1 -> [Var, List.fold_left (flip nullify) p others]
-      | _ -> [Expr [], List.fold_left (flip nullify) p others]
-  
-  let replace_sol e1 = List.map (T2.map1 (const (Expr e1)))
-  
-  let rec solve n e1 e2 p0 = 
-    let (e3, p1) = flatten (e1, p0) in
-    let (e4, p ) = flatten (e2, p1) in
-    (* print_string "> Solving: "; print_terms e3; print_string " =? "; print_terms e4; print_newline (); *)
-    match e3, e4 with
-    | [], [] -> [p]
-    | [Monoid i], e | e, [Monoid i] -> 
-      List.map (fun (v, p1) -> set_det i v p1) (solve_trivial_var i e p)
-    | Letter _ :: _, [] | [], Letter _ :: _ -> []
-    | Letter i :: ts, Letter j :: us -> List.concat_map (solve n ts us) (A.unify i j p)
-    | Monoid i :: ts, [] | [], Monoid i :: ts -> solve n ts [] (nullify i p)
-    | Monoid i :: ts, Monoid j :: us when i = j -> solve n ts us p
-    | _ when n <= 0 -> []
-    | (Monoid i :: _ as ts), (Letter a :: _ as us)
-    | (Letter a :: _ as us), (Monoid i :: _ as ts) -> 
-      solve n ts us (nullify i p)
-    @ let j = unique () in
-      solve (n-1) ts us (set_det i (Expr [Letter a; Monoid j]) (add_det j Var p))
-    | (Monoid i :: _ as ts), (Monoid j :: _ as us) -> 
-      let k = unique () in
-      solve (n/2) ts us (set_det i (Expr [Monoid j; Monoid k]) (add_det k Var p))
-    @ solve (n/2) ts us (set_det j (Expr [Monoid i; Monoid k]) (add_det k Var p))
+    | Some (Var i, Some ((Atom _ as a), u)), Some (Var j, Some (Var k, v)), _, _
+    | Some (Var j, Some (Var k, v)), Some (Var i, Some ((Atom _ as a), u)), _, _ -> 
+      let n, p1 = fresh p0 in
+      solve (hp/2) u D.(cons (Var n) (cons (Var k) v))
+        (set_det j D.(cons (Var i) (cons a (cons (Var n) empty))) p1)
+    
+    | _, _, Some (Some (u, (Atom _ as a)), Var i), Some (Some (v, Var k), Var j)
+    | _, _, Some (Some (v, Var k), Var j), Some (Some (u, (Atom _ as a)), Var i) -> 
+      let n, p1 = fresh p0 in
+      solve (hp/2) u D.(cons (Var n) (cons (Var k) v))
+        (set_det j D.(cons (Var i) (cons a (cons (Var n) empty))) p1)
+    
+    | _ -> failwith "todo"
 
-  let unify n = mergei @@ fun i u j v p -> match (i, u), (j, v) with
-    | (_, Var), (_, Var) -> [Var, p]
-    | (i, Var), (_, Expr e) | (_, Expr e), (i, Var) -> solve_trivial_var i e p
-    | (_, Expr e1), (_, Expr e2) -> 
-      List.map
-        (fun p -> T2.map1 (fun e -> Expr (freeze e)) (flatten (e1, p)))
-        (solve n e1 e2 p)
+  
 
 end

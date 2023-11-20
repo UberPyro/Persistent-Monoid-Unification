@@ -7,7 +7,6 @@ module type Lens = sig
   type ('a, 'b) t
   val getl : ('a, 'b) t -> 'a
   val mapl : ('a -> 'a) -> ('a, 'b) t -> ('a, 'b) t
-  (* val mapl_lst : ('a -> 'a list) -> ('a, 'b) t -> ('a, 'b) t list *)
 end
 
 module Make(L : Lens) : sig
@@ -120,14 +119,10 @@ module Monoid = Make(struct
   type ('a, 'b) t = ('a, 'b) megapuf
   let getl x = x.monoid
   let mapl f x = {x with monoid = f x.monoid}
-  (* let mapl_lst f x = 
-    f x.monoid |> List.map (fun y -> {x with monoid = y}) *)
 end)
 
 module Letter = Make(struct
   type ('a, 'b) t = ('b, 'a) megapuf
   let getl x = x.letter
   let mapl f x = {x with letter = f x.letter}
-  (* let mapl_lst f x = 
-    f x.letter |> List.map (fun y -> {x with letter = y}) *)
 end)
