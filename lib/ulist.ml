@@ -91,8 +91,8 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
       solve (hp-1) (D.snoc u a) v (nullify i p1)
     @ solve (hp-1) u v (set_det i D.(cons k (cons a empty)) p1)    
     
-    | Some (Var i as w, x, Some ((Atom _ as a), u)), Some (Var j as y, v, Some (Var _, _)), _, _
-    | Some (Var j as y, v, Some (Var _, _)), Some (Var i as w, x, Some ((Atom _ as a), u)), _, _ -> 
+    | Some (Var i as w, x, Some ((Atom _ as a), u)), Some (Var j as y, v, _), _, _
+    | Some (Var j as y, v, _), Some (Var i as w, x, Some ((Atom _ as a), u)), _, _ -> 
       let n, p1 = fresh p0 in
       solve (hp/2) u D.(cons n v) (set_det j D.(cons w (cons a (cons n empty))) p1)
     @ solve (hp/2) D.(cons n x) v (set_det i D.(cons y (cons n empty)) p1)
@@ -103,21 +103,19 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
       solve (hp/2) u D.(snoc v n) (set_det j D.(snoc (snoc (cons n empty) a) w) p1)
     @ solve (hp/2) D.(snoc x n) v (set_det i D.(snoc (cons n empty) y) p1)
     
-    | Some (Var i as vi, u, Some (Var _, _)), Some (Var j as vj, v, Some (Var _, _)), _, _ -> 
+    | Some (Var i as vi, u, _), Some (Var j as vj, v, _), _, _ -> 
       let n, p1 = fresh p0 in
       solve (hp/2) D.(cons n u) v (set_det i D.(cons vj (cons n empty)) p1)
     @ let a, p2 = T2.map1 (fun z -> Atom z) (A.fresh p1) in
       solve (hp/2) u D.(cons a (cons n v))
         (set_det j D.(cons vi (cons a (cons n empty))) p2)
     
-    | _, _, Some (Some (_, Var _), u, (Var i as vi)), Some (Some (_, Var _), v, (Var j as vj)) -> 
+    (* | _, _, Some (Some (_, Var _), u, (Var i as vi)), Some (Some (_, Var _), v, (Var j as vj)) -> 
       let n, p1 = fresh p0 in
       solve (hp/2) D.(snoc u n) v (set_det i D.(snoc (cons n empty) vj) p1)
     @ let a, p2 = T2.map1 (fun z -> Atom z) (A.fresh p1) in
       solve (hp/2) u D.(snoc (snoc v n) a)
-        (set_det j D.(snoc (snoc (cons n empty) a) vi) p2)
-    
-    | _ -> failwith "todo"
+        (set_det j D.(snoc (snoc (cons n empty) a) vi) p2) *)
 
   (* handle vars are equal ! *)
 
