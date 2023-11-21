@@ -103,7 +103,7 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
       solve (hp/2) u D.(snoc v n) (set_det j D.(snoc (snoc (cons n empty) a) w) p1)
     @ solve (hp/2) D.(snoc x n) v (set_det i D.(snoc (cons n empty) y) p1)
     
-    | Some (Var i as vi, u, _), Some (Var j as vj, v, _), _, _ -> 
+    | Some (Var i as vi, u, Some (Var _, _)), Some (Var j as vj, v, Some (Var _, _)), _, _ -> 
       let n, p1 = fresh p0 in
       solve (hp/2) D.(cons n u) v (set_det i D.(cons vj (cons n empty)) p1)
     @ let a, p2 = T2.map1 (fun z -> Atom z) (A.fresh p1) in
