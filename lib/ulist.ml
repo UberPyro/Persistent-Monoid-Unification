@@ -83,13 +83,13 @@ module Make(A : UNIFIABLE) = struct  (* plotkin semialgorithm + pyro heuristics 
     | Some (Var i, v, _), Some (Atom _ as a, u, _), _, _ -> 
       let k, p1 = fresh p0 in
       solve (hp-1) (D.cons a u) v (nullify i p1)
-    @ solve (hp-1) u v (set_det i D.(cons a (cons k empty)) p1)    
+    @ solve (hp-1) u (D.cons k v) (set_det i D.(cons a (cons k empty)) p1)    
     
     | _, _, Some (_, u, (Atom _ as a)), Some (_, v, Var i)
     | _, _, Some (_, v, Var i), Some (_, u, (Atom _ as a)) -> 
       let k, p1 = fresh p0 in
       solve (hp-1) (D.snoc u a) v (nullify i p1)
-    @ solve (hp-1) u v (set_det i D.(cons k (cons a empty)) p1)    
+    @ solve (hp-1) (D.snoc u k) v (set_det i D.(cons k (cons a empty)) p1)    
     
     | Some (Var i as w, x, Some ((Atom _ as a), u)), Some (Var j as y, v, _), _, _
     | Some (Var j as y, v, _), Some (Var i as w, x, Some ((Atom _ as a), u)), _, _ -> 
